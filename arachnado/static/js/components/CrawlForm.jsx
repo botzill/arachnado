@@ -19,7 +19,22 @@ var tinyPadding = {
 
 export var CrawlForm = React.createClass({
     getInitialState: function () {
-        return {value: "", isOptionsVisible: false, settings: [], args: []};
+        return {
+            value: "spider://thomasnet",
+            isOptionsVisible: true,
+            settings: [
+                {
+                    'key': 'TESTING_MODE',
+                    'value': 1
+                }
+            ],
+            args: [
+                {
+                    'key': 'search_query',
+                    'value': 'auto wire harness'
+                }
+            ]
+        };
     },
 
     render: function () {

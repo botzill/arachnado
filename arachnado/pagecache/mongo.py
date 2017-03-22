@@ -20,6 +20,8 @@ class MongoCacheStorage(object):
         self.db.close()
 
     def retrieve_response(self, spider, request):
+        if not request.meta.get('cache', True):
+            return
         doc = self.col.find_one({'url': request.url})
         if doc is None:
             return  # not cached

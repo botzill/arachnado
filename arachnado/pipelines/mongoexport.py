@@ -152,7 +152,14 @@ class MongoExportPipeline(object):
 
     @tt_coroutine
     def process_item(self, item, spider):
+        _id = None
+        if item['items']:
+            _id = item['items'][0].pop('_id', None)
         mongo_item = scrapy_item_to_dict(item)
+        if _id:
+            mongo_item['_id'] = _id
+
+        item['_id'] = _id
         if self.job_id_key:
             mongo_item[self.job_id_key] = self.job_id
         try:
@@ -162,9 +169,9 @@ class MongoExportPipeline(object):
             self.crawler.stats.inc_value("mongo_export/store_error_count")
             self.crawler.stats.inc_value("mongo_export/store_error_count/" +
                                          e.__class__.__name__)
-            logger.error("Error storing item", exc_info=True, extra={
-                'crawler': self.crawler
-            })
+            # logger.error("Error storing item", exc_info=True, extra={
+            #     'crawler': self.crawler
+            # })
         raise gen.Return(item)
 
     def _update_finished_job(self, reason):

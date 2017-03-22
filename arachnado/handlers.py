@@ -13,6 +13,9 @@ from arachnado.rpc.data import PagesDataRpcWebsocketHandler, JobsDataRpcWebsocke
 
 from arachnado.rpc import RpcHttpHandler
 from arachnado.rpc.ws import RpcWebsocketHandler
+import pymongo
+from StringIO import StringIO
+import csv
 
 
 at_root = lambda *args: os.path.join(os.path.dirname(__file__), *args)
@@ -42,6 +45,8 @@ def get_application(crawler_process, domain_crawlers,
         url(r"/crawler/resume", ResumeCrawler, context, name="resume"),
         url(r"/crawler/status", CrawlerStatus, context, name="status"),
         url(r"/ws-updates", Monitor, context, name="ws-updates"),
+        url(r"/queries/list", QueriesList, context, name="queries_list"),
+        url(r"/queries/download", QueriesDownload, context, name="queries_download"),
 
         # RPC API
         url(r"/ws-rpc", RpcWebsocketHandler, context, name="ws-rpc"),
@@ -60,9 +65,18 @@ def get_application(crawler_process, domain_crawlers,
     )
 
 
+def convert_pipeline_results(results):
+    if isinstance(results, dict):
+        results = results['result']
+    else:
+        results = list(results)
+
+    return results
+
+
 class BaseRequestHandler(RequestHandler):
 
-    def initialize(self, crawler_process, domain_crawlers,
+    def initialize(self, crawler_process, domain_crawlers, job_storage,
                    site_storage, opts, **kwargs):
         """
         :param arachnado.crawler_process.ArachnadoCrawlerProcess
@@ -71,6 +85,7 @@ class BaseRequestHandler(RequestHandler):
         self.crawler_process = crawler_process
         self.domain_crawlers = domain_crawlers
         self.site_storage = site_storage
+        self.job_storage = job_storage
         self.opts = opts
 
     def render(self, *args, **kwargs):
@@ -166,3 +181,122 @@ class CrawlerStatus(BaseRequestHandler):
                     if job['id'] in crawl_ids]
 
         self.write(json_encode({"jobs": jobs}))
+
+
+class QueriesList(BaseRequestHandler):
+    def get_emails_per_search(self, col):
+        pipeline = [
+            {"$match": {'$and': [{"items": {'$ne': []}}]}},
+            {"$unwind": "$items"},
+            {"$project": {"emails": "$items.emails", "search_term": "$items.search_term"}},
+            {"$unwind": "$emails"},
+            {"$group": {"_id": {"emails": "$emails", "search_term": "$search_term"}}},
+            {"$group": {"_id": "$_id.search_term", "emails_count": {"$sum": 1}}},
+            {"$project": {"search_term": "$_id", "emails_count": "$emails_count", "_id": 0}},
+        ]
+        results = col.aggregate(pipeline)
+        results = convert_pipeline_results(results)
+        results = dict([(i['search_term'], i['emails_count']) for i in results])
+
+        return results
+
+    def get_total_results_per_search(self, col):
+        pipeline = [
+            {"$match": {'$and': [{"items": {'$ne': []}}]}},
+            {"$unwind": "$items"},
+            {"$group": {"_id": "$items.search_term", "results": {"$sum": 1}}},
+            {"$project": {"results": 1, "search_term": "$_id", "_id": 0}}
+        ]
+        results = col.aggregate(pipeline)
+        results = convert_pipeline_results(results)
+        results = dict([(i['search_term'], i['results']) for i in results])
+
+        return results
+
+    def post(self):
+        # TODO would be nice to have this via socket as well
+        db = pymongo.MongoClient(self.opts['arachnado.storage']['jobs_uri'])
+        jobs_col = db['arachnado']['jobs']
+        items_col = db['arachnado']['items']
+
+        pipeline = [
+            {"$match": {'$and': [{"spider": {'$ne': 'contacts'}}]}},
+            {"$group": {"_id": "$options.args.search_query", "search_count": {"$sum": 1},
+                        "spiders": {'$addToSet': '$spider'}}},
+            {"$project": {"search_count": 1, "search_term": "$_id", "_id": 0, "spiders": 1}},
+        ]
+        results = jobs_col.aggregate(pipeline)
+        query_results = convert_pipeline_results(results)
+
+        total_results = self.get_total_results_per_search(items_col)
+        total_emails = self.get_emails_per_search(items_col)
+
+        for query in query_results:
+            query['results'] = total_results.get(query['search_term'], 0)
+            query['emails'] = total_emails.get(query['search_term'], 0)
+
+        self.write({"queries": query_results})
+
+
+class QueriesDownload(BaseRequestHandler):
+    def _format_emails(self, item):
+        item['emails'] = '\n'.join(item['emails'])
+
+    def export_csv(self, items_col, search_term, full=True):
+        fout = StringIO()
+        fieldnames = ['company_name', 'company_website', 'phone', 'address', 'emails',
+                      'search_term', 'url']
+        writer = csv.DictWriter(fout, fieldnames)
+        writer.writeheader()
+
+        pipeline = [
+            {"$match": {
+                '$and': [{"items": {'$ne': []}}, {"items.search_term": search_term}]}},
+            {"$unwind": "$items"},
+            {"$match": {"items.emails": {"$ne": []}}},
+            {"$project": {
+                "company_website": "$items.company_website",
+                "company_name": "$items.company_name",
+                "address": "$items.address",
+                "phone": "$items.phone",
+                "search_term": "$items.search_term",
+                "emails": "$items.emails",
+                "url": "$url",
+                "_id": 0
+            }},
+        ]
+
+        if full:
+            # Remove the: {"$match": {"items.emails": {"$ne": []}}},
+            del pipeline[2]
+
+        results = items_col.aggregate(pipeline)
+        results = convert_pipeline_results(results)
+        for item in results:
+            self._format_emails(item)
+            writer.writerow(item)
+
+        fout.seek(0)
+        csv_data = fout.read()
+
+        return csv_data
+
+    def get(self):
+        db = pymongo.MongoClient(self.opts['arachnado.storage']['items_uri'])
+        items_col = db['arachnado']['items']
+        search_term = self.get_argument('search_term', '')
+        full = self.get_argument('full', '')
+
+        if search_term:
+            file_name = '_'.join(search_term.split())
+
+            data = self.export_csv(items_col, search_term, full=full)
+
+            if full:
+                file_name += '_full'
+
+            self.set_header('Content-Type', 'text/csv')
+            self.set_header('Content-Disposition', 'attachment; filename=%s.csv' % file_name)
+
+            self.write(data)
+            self.finish()

@@ -24,7 +24,7 @@
                 <ul class="nav navbar-nav">
                     <li><a id="arachnado-connection-monitor"></a></li>
                     <li id="arachnado-process-stats"></li>
-                    <li><a href="#/sites">Known sites</a></li>
+                    <li><a href="#/queries">Queries</a></li>
                 </ul>
                 <ul class="nav navbar-nav navbar-right">
                     {% block nav-help %}<li><a href="{{ reverse_url('help') }}">Help</a></li>{% end %}
@@ -42,6 +42,8 @@
         window.START_CRAWL_URL = JSON.parse('{% raw json_encode(reverse_url("start")) %}');
         window.STOP_CRAWL_URL = JSON.parse('{% raw json_encode(reverse_url("stop")) %}');
         window.PAUSE_CRAWL_URL = JSON.parse('{% raw json_encode(reverse_url("pause")) %}');
+        window.QUERIES_LIST_URL = JSON.parse('{% raw json_encode(reverse_url("queries_list")) %}');
+        window.QUERIES_DOWNLOAD_URL = JSON.parse('{% raw json_encode(reverse_url("queries_download")) %}');
         window.RESUME_CRAWL_URL = JSON.parse('{% raw json_encode(reverse_url("resume")) %}');
         window.INITIAL_PROCESS_STATS = JSON.parse('{% raw initial_process_stats_json %}');
         {% block initial_data %}{% end %}
