@@ -220,7 +220,7 @@ class QueriesList(BaseRequestHandler):
         items_col = db['arachnado']['items']
 
         pipeline = [
-            {"$match": {'$and': [{"spider": {'$ne': 'contacts'}}]}},
+            {"$match": {'$and': [{"spider": {'$nin': ['contacts', 'generic']}}]}},
             {"$group": {"_id": "$options.args.search_query", "search_count": {"$sum": 1},
                         "spiders": {'$addToSet': '$spider'}}},
             {"$project": {"search_count": 1, "search_term": "$_id", "_id": 0, "spiders": 1}},

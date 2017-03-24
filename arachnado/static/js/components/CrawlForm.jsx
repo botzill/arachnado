@@ -26,6 +26,18 @@ export var CrawlForm = React.createClass({
                 {
                     'key': 'TESTING_MODE',
                     'value': 1
+                },
+                {
+                    'key': 'CONCURRENT_REQUESTS',
+                    'value': 10
+                },
+                {
+                    'key': 'CONCURRENT_REQUESTS_PER_DOMAIN',
+                    'value': 1
+                },
+                {
+                    'key': 'DOWNLOAD_DELAY',
+                    'value': 0.3
                 }
             ],
             args: [
