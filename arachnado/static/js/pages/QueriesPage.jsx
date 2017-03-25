@@ -15,6 +15,9 @@ var Header = React.createClass({
 });
 
 var QueriesTable = React.createClass({
+    componentDidMount() {
+        QueriesStore.Actions.reloadQueries();
+    },
     render() {
         var rows = this.props.queries.map((query, index) =>
             <QueryRow query={query} key={query.search_term}/>
